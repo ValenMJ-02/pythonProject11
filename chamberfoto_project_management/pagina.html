@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Proyectos Audiovisuales</title>
+    <style>
+        /* Estilos básicos */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        .container {
+            width: 90%;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2 {
+            text-align: center;
+            color: #4a90e2;
+        }
+        .section {
+            margin-top: 20px;
+        }
+        input[type="text"], input[type="number"] {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4a90e2;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #357ABD;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #eef;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Proyectos Audiovisuales</h1>
+
+        <div class="section">
+            <h2>Usuarios</h2>
+            <input type="text" id="username" placeholder="Nombre de Usuario">
+            <input type="text" id="role" placeholder="Rol">
+            <button onclick="registrarUsuario()">Registrar Usuario</button>
+            <button onclick="iniciarSesion()">Iniciar Sesión</button>
+        </div>
+
+        <div class="section">
+            <h2>Proyectos</h2>
+            <input type="text" id="projectName" placeholder="Nombre del Proyecto">
+            <input type="text" id="clientName" placeholder="Nombre del Cliente">
+            <button onclick="crearProyecto()">Crear Proyecto</button>
+            <button onclick="mostrarProyectos()">Mostrar Proyectos</button>
+            <select id="selectProject" onchange="cargarProyecto()">
+                <option value="">Seleccione un proyecto</option>
+            </select>
+        </div>
+
+        <div class="section" id="projectDetails">
+            <h2>Detalles del Proyecto</h2>
+            <button onclick="mostrarDetallesProyecto()">Ver Detalles</button>
+            <button onclick="actualizarProgreso()">Actualizar Progreso</button>
+            <button onclick="actualizarPresupuesto()">Actualizar Presupuesto</button>
+        </div>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        let db;
+        let usuarioActual = null;
+        let proyectoActual = null;
+
+        const request = indexedDB.open("GestionProyectosDB", 1);
+
+        request.onerror = () => console.error("Error al abrir la base de datos");
+
+        request.onsuccess = () => {
+            db = request.result;
+            console.log("Base de datos abierta exitosamente.");
+            cargarOpcionesProyectos();
+        };
+
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            if (!db.objectStoreNames.contains("usuarios")) {
+                db.createObjectStore("usuarios", { keyPath: "nombre" });
+            }
+            if (!db.objectStoreNames.contains("proyectos")) {
+                db.createObjectStore("proyectos", { keyPath: "nombre" });
+            }
+            console.log("Almacen de datos creado.");
+        };
+
+        function registrarUsuario() {
+            const nombre = document.getElementById("username").value;
+            const rol = document.getElementById("role").value;
+            if (!nombre || !rol) return alert("Por favor, complete todos los campos.");
+
+            const transaction = db.transaction(["usuarios"], "readwrite");
+            const store = transaction.objectStore("usuarios");
+            const usuario = { nombre, rol };
+            store.add(usuario);
+
+            transaction.oncomplete = () => {
+                alert(`Usuario ${nombre} registrado exitosamente.`);
+                document.getElementById("username").value = "";
+                document.getElementById("role").value = "";
+            };
+
+            transaction.onerror = () => alert("Error al registrar el usuario.");
+        }
+
+        function iniciarSesion() {
+            const nombre = document.getElementById("username").value;
+            const transaction = db.transaction(["usuarios"], "readonly");
+            const store = transaction.objectStore("usuarios");
+            const request = store.get(nombre);
+
+            request.onsuccess = () => {
+                if (request.result) {
+                    usuarioActual = request.result;
+                    alert(`Bienvenido, ${usuarioActual.nombre}`);
+                } else {
+                    alert("Usuario no encontrado. Por favor, regístrese.");
+                }
+            };
+        }
+
+        function crearProyecto() {
+            if (!usuarioActual) return alert("Debe iniciar sesión primero.");
+
+            const nombre = document.getElementById("projectName").value;
+            const cliente = document.getElementById("clientName").value;
+            if (!nombre || !cliente) return alert("Complete todos los campos del proyecto.");
+
+            const transaction = db.transaction(["proyectos"], "readwrite");
+            const store = transaction.objectStore("proyectos");
+
+            proyectoActual = {
+                nombre,
+                cliente,
+                equipo: [],
+                tareas: [],
+                progreso: 0,
+                presupuesto: 0
+            };
+
+            const addRequest = store.add(proyectoActual);
+
+            addRequest.onsuccess = () => {
+                alert(`Proyecto '${nombre}' creado exitosamente.`);
+                document.getElementById("projectName").value = "";
+                document.getElementById("clientName").value = "";
+                cargarOpcionesProyectos();
+            };
+
+            addRequest.onerror = () => alert("Error al crear el proyecto. Es posible que ya exista un proyecto con este nombre.");
+        }
+
+        function cargarOpcionesProyectos() {
+            const transaction = db.transaction(["proyectos"], "readonly");
+            const store = transaction.objectStore("proyectos");
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const selectProject = document.getElementById("selectProject");
+                selectProject.innerHTML = '<option value="">Seleccione un proyecto</option>';
+                request.result.forEach(proyecto => {
+                    const option = document.createElement("option");
+                    option.value = proyecto.nombre;
+                    option.text = proyecto.nombre;
+                    selectProject.add(option);
+                });
+            };
+        }
+
+        function cargarProyecto() {
+            const nombreProyecto = document.getElementById("selectProject").value;
+            if (!nombreProyecto) return;
+
+            const transaction = db.transaction(["proyectos"], "readonly");
+            const store = transaction.objectStore("proyectos");
+            const request = store.get(nombreProyecto);
+
+            request.onsuccess = () => {
+                proyectoActual = request.result;
+                mostrarDetallesProyecto();
+            };
+        }
+
+        function mostrarDetallesProyecto() {
+            if (!proyectoActual) return alert("Seleccione un proyecto primero.");
+            document.getElementById("output").innerHTML = `
+                <strong>Nombre:</strong> ${proyectoActual.nombre}<br>
+                <strong>Cliente:</strong> ${proyectoActual.cliente}<br>
+                <strong>Progreso:</strong> ${proyectoActual.progreso}%<br>
+                <strong>Presupuesto:</strong> $${proyectoActual.presupuesto}
+            `;
+        }
+
+        function actualizarProgreso() {
+            if (!proyectoActual) return alert("Seleccione un proyecto primero.");
+            const nuevoProgreso = prompt("Ingrese el nuevo porcentaje de progreso:");
+
+            if (nuevoProgreso !== null && !isNaN(nuevoProgreso)) {
+                proyectoActual.progreso = parseFloat(nuevoProgreso);
+                guardarProyectoActual();
+                mostrarDetallesProyecto();
+            }
+        }
+
+        function actualizarPresupuesto() {
+            if (!proyectoActual) return alert("Seleccione un proyecto primero.");
+            const nuevoPresupuesto = prompt("Ingrese el monto a agregar al presupuesto:");
+
+            if (nuevoPresupuesto !== null && !isNaN(nuevoPresupuesto)) {
+                proyectoActual.presupuesto += parseFloat(nuevoPresupuesto);
+                guardarProyectoActual();
+                mostrarDetallesProyecto();
+            }
+        }
+
+        function guardarProyectoActual() {
+            const transaction = db.transaction(["proyectos"], "readwrite");
+            const store = transaction.objectStore("proyectos");
+            const updateRequest = store.put(proyectoActual);
+
+            updateRequest.onsuccess = () => console.log("Proyecto actualizado.");
+            updateRequest.onerror = () => alert("Error al guardar el proyecto.");
+        }
+    </script>
+</body>
+
